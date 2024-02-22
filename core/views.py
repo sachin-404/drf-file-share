@@ -1,14 +1,13 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import File, User
-from .serializers import FileSerializer
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
-from .serializers import UserSerializer
+from .models import File, User
+from .serializers import FileSerializer, UserSerializer
 
 class FileUploadView(generics.CreateAPIView):
     serializer_class = FileSerializer
