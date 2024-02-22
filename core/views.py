@@ -1,12 +1,12 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import File, User
 from .serializers import FileSerializer
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode
-# from django.contrib.auth import get_user_model
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
 from .serializers import UserSerializer
 
@@ -19,15 +19,25 @@ class FileUploadView(generics.CreateAPIView):
         allowed_types = ['pptx', 'docx', 'xlsx']
         if file.name.split('.')[-1] not in allowed_types:
             raise ValidationError("Only pptx, docx, and xlsx files are allowed.")
-        serializer.save(user=self.request.user)
-
+        
+        # Check if the user is an Ops User
+        if self.request.user.user_type == 'ops':
+            serializer.save(user=self.request.user)
+        else:
+            raise ValidationError("Only Ops Users can upload files.")
 
 class FileListView(generics.ListAPIView):
     serializer_class = FileSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return File.objects.filter(user=self.request.user)
+        # Check if the user is an Ops User or a Client User
+        if self.request.user.user_type == 'ops':
+            return File.objects.filter(user=self.request.user)
+        elif self.request.user.user_type == 'client':
+            return File.objects.all()  # Return all files for Client Users
+        else:
+            return File.objects.none()  # Return empty queryset for other users
 
 class FileDownloadView(generics.RetrieveAPIView):
     serializer_class = FileSerializer
@@ -49,14 +59,14 @@ class FileDownloadView(generics.RetrieveAPIView):
         return Response({'download_link': url, 'message': 'success'})
 
 class UserSignUpView(generics.CreateAPIView):
-    queryset = User.objects.all()
+    queryset = User.objects.all()  # Allow signup for both Ops and Client Users
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
     def perform_create(self, serializer):
         user = serializer.save()
         token = default_token_generator.make_token(user)
-        uidb64 = urlsafe_base64_encode(user.pk)
+        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
         verification_link = f'http://localhost:8000/verify-email/{uidb64}/{token}/'
         # send verification email with verification_link
         send_mail(
@@ -67,8 +77,24 @@ class UserSignUpView(generics.CreateAPIView):
             fail_silently=False,
         )
 
+class VerifyEmailView(generics.GenericAPIView):
+    def get(self, request, *args, **kwargs):
+        uidb64 = kwargs['uidb64']
+        token = kwargs['token']
+        try:
+            uid = force_bytes(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+            if default_token_generator.check_token(user, token):
+                user.is_active = True
+                user.save()
+                return Response({'message': 'Email verified successfully'}, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+
 class UserLoginView(generics.CreateAPIView):
-    queryset = User.objects.all()
+    queryset = User.objects.all()  # Allow login for both Ops and Client Users
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
