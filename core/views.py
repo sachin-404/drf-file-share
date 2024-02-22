@@ -78,6 +78,7 @@ class UserSignUpView(generics.CreateAPIView):
         )
 
 class VerifyEmailView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
     def get(self, request, *args, **kwargs):
         uidb64 = kwargs['uidb64']
         token = kwargs['token']
@@ -85,7 +86,7 @@ class VerifyEmailView(generics.GenericAPIView):
             uid = force_bytes(urlsafe_base64_decode(uidb64))
             user = User.objects.get(pk=uid)
             if default_token_generator.check_token(user, token):
-                user.is_active = True
+                user.is_verified = True
                 user.save()
                 return Response({'message': 'Email verified successfully'}, status=status.HTTP_200_OK)
             else:
